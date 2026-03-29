@@ -1,0 +1,113 @@
+version: 2
+
+models:
+
+  - name: mart_domain_insights
+    description: >
+      Un row par domaine — 16 colonnes, zéro redondance.
+      outreach_signal unifie gorgias_fit_score + pitch_angle + not_found_signal.
+      Table principale consommée par le dashboard.
+
+    columns:
+      - name: domain_id
+        tests:
+          - unique
+          - not_null
+
+      - name: domain
+        tests:
+          - unique
+          - not_null
+
+      - name: ecommerce_platform
+        tests:
+          - not_null
+
+      - name: trustpilot_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['found', 'not_found']
+
+      - name: review_count
+        tests:
+          - not_null
+
+      - name: outreach_signal
+        description: >
+          Signal unique actionnable pour le sales rep.
+          Found    : priority_lead | warm_lead | low_priority
+          Not found: no_stack_prospect | inbox_upgrade_prospect |
+                     competitor_prospect | lightweight_prospect | research_needed
+        tests:
+          - not_null
+          - accepted_values:
+              values: [
+                'priority_lead',
+                'warm_lead',
+                'low_priority',
+                'no_stack_prospect',
+                'inbox_upgrade_prospect',
+                'competitor_prospect',
+                'lightweight_prospect',
+                'research_needed'
+              ]
+
+      - name: tech_maturity
+        description: "Maturité tech basée sur le helpdesk — high | medium | low"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['high', 'medium', 'low']
+
+  - name: mart_reviews_detail
+    description: >
+      Un row par review avec enrichissement AI.
+      Utilisé pour le drill-down par domaine dans le dashboard.
+
+    columns:
+      - name: review_id
+        tests:
+          - unique
+          - not_null
+
+      - name: domain_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('mart_domain_insights')
+              field: domain_id
+
+      - name: domain
+        tests:
+          - not_null
+
+      - name: star_rating
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5]
+              quote: false
+
+      - name: sentiment
+        tests:
+          - accepted_values:
+              values: ['positive', 'neutral', 'negative']
+              config:
+                severity: error
+
+      - name: category
+        tests:
+          - accepted_values:
+              values: ['customer_support', 'shipping', 'product_quality',
+                       'pricing', 'ux', 'returns', 'packaging',
+                       'communication', 'stock', 'loyalty', 'other']
+              config:
+                severity: warn
+
+      - name: is_enriched
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+              quote: false

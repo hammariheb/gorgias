@@ -1,0 +1,24 @@
+ Credentials — NEVER commit these
+.env
+venv/
+dashboard/.streamlit/secrets.toml
+*.log
+scraper.log
+enrichment.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# dbt
+dbt_transformation/logs/
+dbt_transformation/.user.yml
+
+# BigQuery service account keys
+*.json
+
+# OS
+.DS_Store
+Thumbs.db

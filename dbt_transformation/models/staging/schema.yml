@@ -1,0 +1,108 @@
+version: 2
+
+models:
+
+  # ── stg_leads ───────────────────────────────────────────────
+  - name: stg_leads
+    description: "Leads eCommerce nettoyés — un row par domaine marchand"
+
+    columns:
+      - name: domain_id
+        description: "Surrogate key MD5 sur domain normalisé"
+        tests:
+          - not_null
+          - unique
+
+      - name: domain
+        description: "Domaine marchand normalisé (lowercase, trimmed)"
+        tests:
+          - unique
+          - not_null
+          - dbt_utils.not_empty_string
+
+      - name: ecommerce_platform
+        description: "Plateforme eCommerce utilisée par le lead"
+        tests:
+          - not_null
+
+      - name: estimated_gmv_band
+        description: "Bucket de GMV estimé"
+
+  - name: stg_reviews
+    description: "Reviews Trustpilot nettoyées — un row par review"
+
+    columns:
+      - name: review_id
+        description: "ID unique Trustpilot"
+        tests:
+          - unique
+          - not_null
+
+      - name: domain_id
+        description: "FK vers stg_leads.domain_id"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_leads')
+              field: domain_id
+
+      - name: domain
+        tests:
+          - not_null
+
+      - name: star_rating
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5]
+              quote: false
+              config:
+                severity: error
+
+      - name: review_date
+        description: "Date de publication de la review"
+        tests:
+          - not_null
+
+      - name: language
+        tests:
+          - not_null
+
+
+  - name: stg_reviews_enriched
+    description: "Reviews jointes avec enrichissements AI"
+
+    columns:
+      - name: review_id
+        tests:
+          - unique
+          - not_null
+
+      - name: domain
+        tests:
+          - not_null
+
+      - name: sentiment
+        tests:
+          - accepted_values:
+              values: ['positive', 'neutral', 'negative']
+              severity: error
+
+      - name: category
+        tests:
+          - accepted_values:
+              values: ['customer_support', 'shipping', 'product_quality',
+                       'pricing', 'ux', 'returns','packaging','communication','stock','loyalty','other']
+              severity: error
+
+      - name: pain_point
+        description: "Point de douleur identifié par l'AI"
+
+      - name: actionable_insight
+        description: "Insight actionnable généré par l'AI"
+
+      - name: model_used
+        description: "Version du modèle AI utilisée"
+
+      - name: enriched_at
+        description: "Timestamp de l'enrichissement AI"

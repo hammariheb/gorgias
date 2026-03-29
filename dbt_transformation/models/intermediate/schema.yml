@@ -1,0 +1,49 @@
+version: 2
+
+models:
+
+
+  - name: int_reviews_agg
+    description: "Métriques de reviews agrégées par domaine"
+    columns:
+      - name: domain
+        tests:
+          - unique
+          - not_null
+
+      - name: review_count
+        tests:
+          - not_null
+
+      - name: avg_rating
+
+      - name: pct_positive
+      
+      - name: pct_negative
+
+
+  - name: int_category_agg
+    description: "Top catégories par domaine avec métriques sentiment"
+    columns:
+      - name: domain
+        tests: 
+          - not_null
+      - name: category
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['customer_support', 'shipping', 'product_quality',
+                       'pricing', 'ux', 'returns', 'packaging',
+                       'communication', 'stock', 'loyalty','other']
+      - name: review_count
+
+
+  - name: int_pain_points
+    description: "Pain points agrégés pour les reviews négatives"
+    columns:
+      - name: domain
+        tests:
+          - not_null
+      - name: negative_count
+
+

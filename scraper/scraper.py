@@ -51,7 +51,7 @@ def scrape_domain(
 ) -> list[dict]:
     """
     Scrape toutes les reviews d'un domaine en une seule boucle propre.
-    Conserve le domain original pour le JOIN BQ avec leads_table.
+    Conserve le domain original pour le JOIN BQ avec leads_raw.
     """
     mode = f"incrémental depuis {last_scraped_date}" if last_scraped_date else "full"
     log.info(f"🔍 {domain}  [{mode}]")

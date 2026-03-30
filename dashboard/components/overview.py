@@ -33,7 +33,7 @@ OPTIONAL_COLUMNS = {
 
 def render(df: pd.DataFrame) -> None:
 
-    # ── KPI metrics ───────────────────────────────────────────
+    # ── KPIs ──────────────────────────────────────────────────
     total     = len(df)
     found     = len(df[df["trustpilot_status"] == "found"])
     not_found = len(df[df["trustpilot_status"] == "not_found"])
@@ -50,7 +50,7 @@ def render(df: pd.DataFrame) -> None:
     st.caption(f"{total} domains displayed")
     st.divider()
 
-    # ── Signal distribution chart ─────────────────────────────
+    # ── Signal chart ──────────────────────────────────────────
     signal_counts = (
         df["outreach_signal"]
         .value_counts()
@@ -61,8 +61,7 @@ def render(df: pd.DataFrame) -> None:
     signal_counts["color"] = signal_counts["signal"].map(lambda x: SIGNAL_CONFIG.get(x, {}).get("color", "#888"))
 
     fig = px.bar(
-        signal_counts,
-        x="count", y="label", orientation="h",
+        signal_counts, x="count", y="label", orientation="h",
         color="signal",
         color_discrete_map={r["signal"]: r["color"] for _, r in signal_counts.iterrows()},
         title="Outreach signal distribution",
@@ -70,56 +69,64 @@ def render(df: pd.DataFrame) -> None:
     fig.update_layout(showlegend=False, yaxis_title="", xaxis_title="Number of domains")
     st.plotly_chart(fig, use_container_width=True)
 
+    # ── Domain quick selector ─────────────────────────────────
     st.divider()
+    st.subheader("Select a domain")
+    st.caption("Selecting a domain here syncs the Drill-down and Categories tabs automatically.")
 
-    # ── Domain scroll selector ────────────────────────────────
-    # Scrollable selectbox — lets the user click a domain in the overview
-    # and see a quick summary inline without switching to drill-down tab
-    st.subheader("Domain quick view")
-    st.caption("Select a domain to see a summary inline")
+    domain_list = ["— select a domain —"] + df["domain"].tolist()
 
-    domain_list    = df["domain"].tolist()
-    selected_quick = st.selectbox(
+    # Pré-sélectionner le domaine actif si déjà choisi
+    current = st.session_state.get("selected_domain")
+    default_idx = 0
+    if current and current in df["domain"].tolist():
+        default_idx = domain_list.index(current)
+
+    chosen = st.selectbox(
         "Jump to domain",
-        ["— select a domain —"] + domain_list,
-        key="overview_domain_scroll",
+        domain_list,
+        index=default_idx,
+        key="overview_domain_select",
     )
 
-    if selected_quick and selected_quick != "— select a domain —":
-        row    = df[df["domain"] == selected_quick].iloc[0]
+    # Mettre à jour session_state quand l'utilisateur choisit un domaine
+    if chosen != "— select a domain —" and chosen != current:
+        st.session_state.selected_domain = chosen
+        st.rerun()   # recharge pour que les autres tabs reflètent le changement
+
+    # Afficher un résumé rapide du domaine sélectionné
+    if st.session_state.selected_domain and st.session_state.selected_domain in df["domain"].values:
+        row    = df[df["domain"] == st.session_state.selected_domain].iloc[0]
         status = row.get("trustpilot_status")
 
         with st.container(border=True):
+            st.markdown(f"**{st.session_state.selected_domain}** · {row.get('ecommerce_platform', '—')} · {row.get('estimated_gmv_band', '—')}")
             col_a, col_b, col_c = st.columns(3)
-            col_a.markdown(f"**Platform:** {row.get('ecommerce_platform', '—')}")
-            col_b.markdown(f"**GMV Band:** {row.get('estimated_gmv_band', '—')}")
-            col_c.markdown(f"**Helpdesk:** {row.get('helpdesk') or 'None'}")
-
-            col_d, col_e, col_f = st.columns(3)
-            col_d.markdown(f"**Trustpilot:** {'✅ Found' if status == 'found' else '❌ Not found'}")
-            col_e.markdown(f"**Tech Maturity:** {row.get('tech_maturity', '—')}")
-            col_f.markdown(f"**Signal:** {row.get('outreach_signal', '—')}")
+            col_a.markdown(f"**Trustpilot:** {'✅ Found' if status == 'found' else '❌ Not found'}")
+            col_b.markdown(f"**Signal:** {row.get('outreach_signal', '—')}")
+            col_c.markdown(f"**Tech Maturity:** {row.get('tech_maturity', '—')}")
 
             if status == "found":
+                col_d, col_e, col_f = st.columns(3)
                 avg     = row.get("avg_rating") or 0
                 pct_neg = row.get("pct_negative") or 0
                 count   = row.get("review_count") or 0
-                st.markdown(
-                    f"**Avg rating:** {avg:.2f} ⭐ &nbsp;|&nbsp; "
-                    f"**Reviews:** {int(count)} &nbsp;|&nbsp; "
-                    f"**% Negative:** {pct_neg:.1f}%"
-                )
+                col_d.metric("Avg Rating",  f"{avg:.2f} ⭐")
+                col_e.metric("Reviews",     int(count))
+                col_f.metric("% Negative",  f"{pct_neg:.1f}%")
+
+            st.caption("→ Switch to Drill-down or Categories tab to explore this domain in detail.")
 
     st.divider()
 
-    # ── Optional columns selector ─────────────────────────────
+    # ── Optional columns ──────────────────────────────────────
     st.subheader("All domains")
 
     selected_optional = st.multiselect(
         "Add columns",
         options=list(OPTIONAL_COLUMNS.values()),
         default=[],
-        placeholder="Select optional columns to display...",
+        placeholder="Select optional columns...",
     )
 
     reverse_optional = {v: k for k, v in OPTIONAL_COLUMNS.items()}
@@ -137,12 +144,23 @@ def render(df: pd.DataFrame) -> None:
     table["Avg Rating"] = table["Avg Rating"].round(2)
     table["% Negative"] = table["% Negative"].round(1)
 
-    st.dataframe(
+    # Highlight la ligne du domaine sélectionné
+    event = st.dataframe(
         table,
         use_container_width=True,
         hide_index=True,
+        on_select="rerun",       # ← clic sur une ligne déclenche un rerun
+        selection_mode="single-row",
         column_config={
             "Avg Rating": st.column_config.NumberColumn(format="%.2f ⭐"),
             "% Negative": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
         }
     )
+
+    # Si l'utilisateur clique sur une ligne dans la table → sélectionner ce domaine
+    if event.selection and event.selection.rows:
+        row_idx    = event.selection.rows[0]
+        clicked_domain = df.iloc[row_idx]["domain"]
+        if clicked_domain != st.session_state.selected_domain:
+            st.session_state.selected_domain = clicked_domain
+            st.rerun()

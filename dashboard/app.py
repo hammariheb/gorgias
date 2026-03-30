@@ -16,7 +16,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── Dark header banner ────────────────────────────────────────
+# ── Dark header ───────────────────────────────────────────────
 st.markdown("""
     <div style="
         background: #1a1a1a;
@@ -43,15 +43,17 @@ if df_domains.empty:
     st.error("No data available. Make sure `dbt build` has run successfully.")
     st.stop()
 
-# ── Sidebar global filters ────────────────────────────────────
+# ── Session state — selected domain shared across all tabs ────
+# Initialise à None — aucun domaine sélectionné par défaut
+if "selected_domain" not in st.session_state:
+    st.session_state.selected_domain = None
+
+# ── Sidebar filters ───────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Filters")
     st.caption("Applied across all tabs")
 
-    status_filter = st.selectbox(
-        "Trustpilot Status",
-        ["All", "found", "not_found"],
-    )
+    status_filter = st.selectbox("Trustpilot Status", ["All", "found", "not_found"])
 
     signal_options = ["All"] + sorted(df_domains["outreach_signal"].dropna().unique().tolist())
     signal_filter  = st.selectbox("Outreach Signal", signal_options)
@@ -60,7 +62,6 @@ with st.sidebar:
     platform_filter  = st.selectbox("Platform", platform_options)
 
     st.divider()
-
     domain_search = st.text_input("Search domain", placeholder="e.g. gymshark.com")
 
     st.divider()
@@ -68,7 +69,16 @@ with st.sidebar:
     found = len(df_domains[df_domains["trustpilot_status"] == "found"])
     st.caption(f"{found} / {total} domains on Trustpilot")
 
-# ── Apply filters globally ────────────────────────────────────
+    # Afficher le domaine actif dans la sidebar
+    if st.session_state.selected_domain:
+        st.divider()
+        st.caption(f"📍 Active domain:")
+        st.markdown(f"**{st.session_state.selected_domain}**")
+        if st.button("✕ Clear selection", use_container_width=True):
+            st.session_state.selected_domain = None
+            st.rerun()
+
+# ── Apply filters ─────────────────────────────────────────────
 filtered_domains = df_domains.copy()
 if status_filter   != "All": filtered_domains = filtered_domains[filtered_domains["trustpilot_status"]  == status_filter]
 if signal_filter   != "All": filtered_domains = filtered_domains[filtered_domains["outreach_signal"]     == signal_filter]

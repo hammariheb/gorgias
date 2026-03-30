@@ -1,3 +1,5 @@
+# dashboard/components/drilldown.py
+
 import streamlit as st
 import pandas as pd
 
@@ -23,7 +25,6 @@ PITCH_MAP = {
 
 
 def _render_found(row: pd.Series, reviews: pd.DataFrame) -> None:
-    """Renders the full review breakdown for a domain found on Trustpilot."""
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Avg Rating",  f"{row.get('avg_rating', 0):.2f} ⭐")
     col2.metric("Reviews",     int(row.get("review_count", 0)))
@@ -70,17 +71,13 @@ def _render_found(row: pd.Series, reviews: pd.DataFrame) -> None:
 
 
 def _render_not_found(row: pd.Series) -> None:
-    """Renders the prospect fiche for a domain not found on Trustpilot."""
     st.info("This merchant is not listed on Trustpilot.")
-
     col1, col2, col3 = st.columns(3)
     col1.metric("Platform",      row.get("ecommerce_platform", "—"))
     col2.metric("Helpdesk",      row.get("helpdesk") or "None")
     col3.metric("Tech Maturity", row.get("tech_maturity", "—"))
-
     st.markdown(f"**GMV Band:** {row.get('estimated_gmv_band', '—')}")
     st.markdown(f"**Signal:** {SIGNAL_LABEL.get(row.get('outreach_signal', ''), '—')}")
-
     outreach = row.get("outreach_signal", "")
     if outreach in PITCH_MAP:
         st.success(f"💬 **Pitch angle:** {PITCH_MAP[outreach]}")
@@ -90,16 +87,32 @@ def render(df_domains: pd.DataFrame, load_reviews_fn, domain_search: str = "") -
     st.header("Domain Drill-down")
 
     domain_list = df_domains["domain"].tolist()
-
-    # Filter list by sidebar search
     if domain_search:
         domain_list = [d for d in domain_list if domain_search.lower() in d.lower()]
 
     if not domain_list:
-        st.info("No domains match your search. Try a different keyword.")
+        st.info("No domains match your search.")
         return
 
-    selected = st.selectbox("Select a domain", domain_list, key="dd_domain")
+    # ── Pré-sélectionner le domaine choisi dans l'Overview ───
+    # Lire session_state pour synchroniser avec l'Overview
+    current = st.session_state.get("selected_domain")
+    default_idx = 0
+    if current and current in domain_list:
+        default_idx = domain_list.index(current)
+
+    selected = st.selectbox(
+        "Select a domain",
+        domain_list,
+        index=default_idx,
+        key="dd_domain",
+    )
+
+    # Mettre à jour session_state si l'utilisateur change ici
+    if selected != current:
+        st.session_state.selected_domain = selected
+        st.rerun()
+
     if not selected:
         return
 

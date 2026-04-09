@@ -1,86 +1,77 @@
 import argparse
 import logging
 import sys
-import time
 
 from openai import OpenAI
-from tqdm import tqdm
 
-from ai_enrichment import config
-from ai_enrichment.bigquery_client import (
-    get_client,
-    ensure_enriched_table,
-    load_reviews_to_enrich,
-    upload_enriched_rows,
-)
-from ai_enrichment.enricher import call_llm_batch, merge_results
+from .bigquery_client import get_client, ensure_enriched_table, load_unenriched_reviews
+from .enricher import enrich_batch
+from .config import OPENAI_API_KEY
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s │ %(levelname)-8s │ %(message)s",
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
     datefmt="%H:%M:%S",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("enrichment.log", encoding="utf-8"),
+        logging.FileHandler("ai_enrichment.log", encoding="utf-8"),
     ],
 )
 log = logging.getLogger(__name__)
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Step 3 — AI Enrichment | Gorgias")
-    parser.add_argument("--limit",  type=int, default=None, help="Limiter à N reviews (test)")
-    parser.add_argument("--domain", default=None,           help="Enrichir un seul domaine")
-    return parser.parse_args()
+SOURCE_LABELS = {
+    "default": "reviews_raw        → reviews_enriched",
+    "fr":      "reviews_raw_fr     → reviews_enriched_fr",
+}
 
 
 def main() -> None:
-    args = parse_args()
-
-    log.info("╔═══════════════════════════════════════════════╗")
-    log.info("║                AI Enrichment                  ║")
-    log.info(f"║   Modèle : {config.MODEL:<36}║")
-    log.info(f"║   Batch  : {config.BATCH_SIZE} reviews / appel API              ║")
-    log.info("╚═══════════════════════════════════════════════╝")
-
-    # 1. Connexion BQ + création dataset/table si absents
-    bq_client = get_client()
-    ensure_enriched_table(bq_client)   # ← crée dataset ET table
-
-    # 2. Charger les reviews non encore enrichies
-    log.info("\n[1/3] Chargement des reviews à enrichir...")
-    reviews = load_reviews_to_enrich(
-        bq_client,
-        limit=args.limit,
-        domain=args.domain,
+    parser = argparse.ArgumentParser(description="AI enrichment pipeline")
+    parser.add_argument(
+        "--source",
+        choices=["default", "fr"],
+        default="default",
+        help="Which reviews table to enrich",
     )
+    parser.add_argument("--limit", type=int, default=None, help="Max reviews to enrich")
+    args = parser.parse_args()
+
+    label = SOURCE_LABELS[args.source]
+
+    log.info("╔══════════════════════════════════════════════════╗")
+    log.info("║  AI Enrichment Pipeline                          ║")
+    log.info("╠══════════════════════════════════════════════════╣")
+    log.info(f"║  Source : {label:<41}║")
+    log.info(f"║  Model  : gpt-4o-mini                            ║")
+    log.info(f"║  Limit  : {str(args.limit or 'none'):<41}║")
+    log.info("╚══════════════════════════════════════════════════╝")
+
+    # ── 1. Init clients ───────────────────────────────────────
+    openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    bq_client     = get_client()
+
+    # ── 2. Ensure target table exists ─────────────────────────
+    ensure_enriched_table(bq_client, source=args.source)
+
+    # ── 3. Load unenriched reviews ────────────────────────────
+    reviews = load_unenriched_reviews(bq_client, source=args.source, limit=args.limit)
 
     if not reviews:
-        log.info("  Toutes les reviews sont déjà enrichies.")
+        log.info("✅ Everything already enriched. Nothing to do.")
         return
 
-    # 3. Enrichissement par batch + upload immédiat
-    log.info(f"\n[2/3] Enrichissement de {len(reviews)} reviews "
-             f"en batches de {config.BATCH_SIZE}...")
+    log.info(f"  {len(reviews)} reviews to enrich")
+    log.info(f"  Estimated API calls : {len(reviews) // 10 + 1}")
 
-    openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
-    batches       = [
-        reviews[i : i + config.BATCH_SIZE]
-        for i in range(0, len(reviews), config.BATCH_SIZE)
-    ]
-    total_done = 0
+    # ── 4. Enrich ─────────────────────────────────────────────
+    enrich_batch(openai_client, bq_client, reviews, source=args.source)
 
-    for batch in tqdm(batches, desc="Batches", unit="batch"):
-        enrichments = call_llm_batch(openai_client, batch)
-        merged      = merge_results(batch, enrichments)
-        upload_enriched_rows(bq_client, merged)
-        total_done += len(merged)
-        time.sleep(config.DELAY_BETWEEN_BATCHES)
+    log.info("\n✅ Enrichment complete")
 
-    # 4. Résumé
-    log.info(f"\n[3/3] Terminé !")
-    log.info(f"  Reviews enrichies : {total_done:,}")
-    log.info(f"  Table BQ          : {config.BQ_PROJECT}.{config.REVIEWS_DATASET}.{config.ENRICHED_TABLE}")
+    if args.source == "fr":
+        log.info("\n  Next step → dbt build --select stg_reviews_enriched_fr+")
+    else:
+        log.info("\n  Next step → dbt build --select stg_reviews_enriched+")
 
 
 if __name__ == "__main__":

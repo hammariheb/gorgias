@@ -1,41 +1,72 @@
-with source as (
+with leads_reviews as (
     select * from {{ source('reviews', 'reviews_raw') }}
 ),
 
+builtwith_reviews as (
+    select * from {{ source('reviews', 'reviews_raw_fr') }}
+),
+
 cleaned as (
+
     select
         review_id,
-        lower(trim(domain)) as domain,
+        lower(trim(domain))         as domain,
         review_text,
         review_title,
-        cast(star_rating as int64) as star_rating,
-        date_published as review_date,
+        cast(star_rating as int64)  as star_rating,
+        date_published              as review_date,
         reviewer_name,
         company_replied,
         language,
-        ingested_at
-    from source
+        ingested_at,
+        'target_leads_raw'          as source
+    from leads_reviews
+    where review_id is not null
+
+    union all
+
+    select
+        review_id,
+        lower(trim(domain))         as domain,
+        review_text,
+        review_title,
+        cast(star_rating as int64)  as star_rating,
+        date_published              as review_date,
+        reviewer_name,
+        company_replied,
+        language,
+        ingested_at,
+        -- Tag source directly — guaranteed correct regardless of domain join
+        'builtwith_top_ecommerce_fr' as source
+    from builtwith_reviews
+    where review_id is not null
 
 ),
 
 deduped as (
-    select *,
+
+    select
+        *,
         row_number() over (
             partition by review_id
-            order by ingested_at desc 
+            order by ingested_at desc
         ) as row_num
     from cleaned
+
 ),
 
-leads as (
+domains as (
+
     select domain, domain_id
-    from {{ ref('stg_leads') }}
+    from {{ ref('stg_domains') }}
+
 )
 
 select
     r.review_id,
-    l.domain_id,
+    d.domain_id,
     r.domain,
+    r.source,
     r.review_text,
     r.review_title,
     r.star_rating,
@@ -45,5 +76,5 @@ select
     r.language,
     r.ingested_at
 from deduped r
-left join leads l on r.domain = l.domain
-where r.row_num = 1 
+left join domains d on r.domain = d.domain
+where r.row_num = 1

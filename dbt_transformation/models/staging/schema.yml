@@ -3,7 +3,7 @@ version: 2
 models:
 
   # ── stg_leads ───────────────────────────────────────────────
-  - name: stg_leads
+  - name: stg_domains
     description: "Leads eCommerce nettoyés — un row par domaine marchand"
 
     columns:
@@ -22,8 +22,6 @@ models:
 
       - name: ecommerce_platform
         description: "Plateforme eCommerce utilisée par le lead"
-        tests:
-          - not_null
 
       - name: estimated_gmv_band
         description: "Bucket de GMV estimé"

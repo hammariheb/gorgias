@@ -31,10 +31,28 @@ def build_headers() -> dict:
     }
 
 
-def _extract_slug_from_url(url: str) -> str | None:
-    """Extrait le slug depuis une URL Trustpilot finale."""
-    match = re.search(r"trustpilot\.com/review/([^/?#\s]+)", str(url))
-    return match.group(1) if match else None
+def _extract_slug_from_url(url: str) -> str:
+    """
+    Extracts the Trustpilot slug from a full URL string.
+    "https://www.trustpilot.com/review/sezane.com?page=2" → "sezane.com"
+    """
+    path = url.split("trustpilot.com/review/")[-1]
+    return path.split("?")[0].strip("/")
+
+
+def _parse_location(location: str, current_slug: str) -> tuple[str, str]:
+    """
+    Parse le header Location d'un 308 Trustpilot.
+    Retourne (base_url, slug).
+
+    Exemples :
+      'https://fr.trustpilot.com/review/sezane.com'  → ('https://www.trustpilot.com', 'sezane.com')
+      '/review/sezane.com'                            → ('https://www.trustpilot.com', 'sezane.com')
+    """
+    match = re.search(r"/review/([^/?#\s]+)", location)
+    slug  = match.group(1) if match else current_slug
+    # Always normalize to www.trustpilot.com even if redirect points to fr./de./etc.
+    return TRUSTPILOT_BASE, slug
 
 
 def fetch_next_data(
@@ -44,57 +62,84 @@ def fetch_next_data(
     retries: int = 3,
 ) -> tuple[dict | None, str]:
     """
-    Fetche une page Trustpilot avec follow_redirects=True.
-    Retourne (__NEXT_DATA__, slug_final).
+    Fetches a Trustpilot review page and returns (__NEXT_DATA__, slug_used).
 
-    httpx suit automatiquement les 308.
-    On lit resp.url (URL finale après redirections) pour extraire le vrai slug.
+    Handles:
+    - 308 redirects (slug normalization by Trustpilot, language redirects)
+    - 403/429 rate limiting with exponential backoff
+    - 404 domain not found
     """
-    url = f"{TRUSTPILOT_BASE}/review/{domain}?page={page}&sort=recency"
+    active_slug   = domain
+    base_url      = TRUSTPILOT_BASE
+    max_redirects = 3
+    redirects     = 0
 
     for attempt in range(1, retries + 1):
+        url = f"{base_url}/review/{active_slug}?page={page}&sort=recency"
+
         try:
             resp = client.get(url, headers=build_headers(), timeout=20)
 
-            # Extraire le slug depuis l'URL finale (après redirections)
-            final_slug = _extract_slug_from_url(resp.url) or domain
-            if final_slug != domain:
-                log.info(f"  [{domain}] Redirigé → slug réel : {final_slug}")
+            # ── 308 : follow manually ─────────────────────────────
+            if resp.status_code == 308:
+                if redirects >= max_redirects:
+                    log.warning(f"  [{domain}] Too many redirects — aborting")
+                    return None, active_slug
 
+                location           = resp.headers.get("location", "")
+                new_base, new_slug = _parse_location(location, active_slug)
+
+                log.info(f"  [{domain}] 308 → {location}")
+                base_url    = new_base
+                active_slug = new_slug
+                redirects  += 1
+                continue
+
+            # ── 404 : not on Trustpilot ───────────────────────────
             if resp.status_code == 404:
-                log.info(f"  [{domain}] 404 — non référencé sur Trustpilot")
-                return None, final_slug
+                log.info(f"  [{domain}] 404 — not listed on Trustpilot (slug: {active_slug})")
+                return None, active_slug
 
+            # ── 403/429 : rate limiting ───────────────────────────
             if resp.status_code in (403, 429):
-                wait = 2 ** attempt * 10
-                log.warning(f"  [{domain}] {resp.status_code} — pause {wait}s (essai {attempt}/{retries})")
+                wait = 2 ** attempt * 10   # 20s → 40s → 80s
+                log.warning(f"  [{domain}] {resp.status_code} — waiting {wait}s (attempt {attempt}/{retries})")
                 time.sleep(wait)
                 continue
 
             resp.raise_for_status()
 
+            # ── 200 : parse __NEXT_DATA__ ─────────────────────────
             soup = BeautifulSoup(resp.text, "html.parser")
             tag  = soup.find("script", {"id": "__NEXT_DATA__"})
 
             if not tag:
-                log.warning(f"  [{domain}] __NEXT_DATA__ absent page {page}")
-                return None, final_slug
+                log.warning(f"  [{domain}] __NEXT_DATA__ not found on page {page}")
+                return None, active_slug
 
-            return json.loads(tag.string), final_slug
+            # FIX 1 — resp.url is httpx.URL not str → cast to str
+            # FIX 2 — tag.string is str | None → guard before json.loads
+            content = tag.string
+            if not content:
+                log.warning(f"  [{domain}] __NEXT_DATA__ is empty on page {page}")
+                return None, active_slug
+
+            return json.loads(content), active_slug
 
         except httpx.TimeoutException:
-            log.warning(f"  [{domain}] Timeout page {page} (essai {attempt}/{retries})")
+            log.warning(f"  [{domain}] Timeout page {page} (attempt {attempt}/{retries})")
             time.sleep(5 * attempt)
+            redirects = 0
         except json.JSONDecodeError:
-            log.error(f"  [{domain}] JSON invalide page {page}")
-            return None, domain
+            log.error(f"  [{domain}] Invalid JSON page {page}")
+            return None, active_slug
         except Exception as e:
-            log.error(f"  [{domain}] Erreur page {page}: {e}")
+            log.error(f"  [{domain}] Error page {page}: {e}")
             if attempt == retries:
-                return None, domain
+                return None, active_slug
             time.sleep(3)
 
-    return None, domain
+    return None, active_slug
 
 
 def search_trustpilot(
@@ -102,12 +147,22 @@ def search_trustpilot(
     domain: str,
 ) -> str | None:
     """
-    Fallback : cherche le marchand via la page de recherche Trustpilot.
+    Fallback: searches Trustpilot for a domain when fetch_next_data returns None.
+    Returns the real Trustpilot slug or None.
     """
     search_url = f"{TRUSTPILOT_BASE}/search?query={domain}"
 
     try:
         resp = client.get(search_url, headers=build_headers(), timeout=15)
+
+        # Handle 308 on search page too
+        if resp.status_code == 308:
+            location      = resp.headers.get("location", "")
+            _, found_slug = _parse_location(location, domain)
+            if found_slug and found_slug != domain:
+                log.info(f"  [{domain}] Search 308 → slug: {found_slug}")
+                return found_slug
+            return None
 
         if resp.status_code != 200:
             return None
@@ -117,7 +172,12 @@ def search_trustpilot(
         if not tag:
             return None
 
-        data    = json.loads(tag.string)
+        # FIX 3 — tag.string is str | None → guard before json.loads
+        content = tag.string
+        if not content:
+            return None
+
+        data    = json.loads(content)
         props   = data.get("props", {}).get("pageProps", {})
         results = props.get("businesses", [])
 
@@ -132,7 +192,7 @@ def search_trustpilot(
         if domain_base.lower() in tp_url.lower() or domain_base.lower() in tp_name.lower():
             profile_url = first.get("links", {}).get("profileUrl", "")
             tp_slug     = profile_url.strip("/").replace("review/", "")
-            log.info(f"  [{domain}] Trouvé via search → slug: {tp_slug}")
+            log.info(f"  [{domain}] Found via search → slug: {tp_slug}")
             return tp_slug
 
         return None

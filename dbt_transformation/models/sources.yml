@@ -1,107 +1,199 @@
 version: 2
 
 sources:
-  - name: leads
-    database: gorgias-case-study-491317
-    schema: leads
-    description: "Raw leads data ingested from source system"
 
+  # ── Leads ─────────────────────────────────────────────────────
+  - name: leads
+    description: "Raw target leads ingested from source system"
     tables:
       - name: leads_raw
-        description: "This is the leads table"
-
+        description: "Original target leads — one row per domain"
         columns:
           - name: domain
             description: "Company domain name"
-            tests:
+            data_tests:
               - not_null
               - unique:
                   severity: warn
-        
 
           - name: ecommerce_platform
-            description: "E-commerce platform used by the lead"
+            description: "eCommerce platform used by the lead"
 
           - name: helpdesk
-            description: "Helpdesk tool used"
+            description: "Helpdesk tool detected"
 
           - name: technologies_app_partners
-            description: "List of partner technologies"
+            description: "List of partner technologies detected"
 
           - name: estimated_gmv_band
             description: "Estimated GMV range bucket"
 
+  # ── Reviews ───────────────────────────────────────────────────
   - name: reviews
-    database: gorgias-case-study-491317
-    schema: reviews
-    description: "Raw reviews data ingested from source system"
+    description: "Raw and enriched reviews data"
 
     tables:
+
+      # ── Raw reviews — target leads pipeline ──────────────────
       - name: reviews_raw
-        description: "This is the reviews table"
-
+        description: "Trustpilot reviews scraped for target leads"
         columns:
-          - name: domain
-            description: "Company domain name"
-            tests:
-              - not_null
-
           - name: review_id
-            description: "Unique identifier for each review"
-            tests:
+            description: "Unique Trustpilot review ID"
+            data_tests:
+              - not_null
               - unique:
                   severity: error
+
+          - name: domain
+            description: "Company domain name — FK to leads_raw"
+            data_tests:
               - not_null
 
+          - name: trustpilot_slug
+            description: "Real Trustpilot slug (may differ from domain)"
+
           - name: review_text
-            description: "Text content of the review"
+            description: "Body text of the review"
 
           - name: review_title
             description: "Title of the review"
 
           - name: star_rating
-            description: "Star rating given in the review (e.g., 1-5)"
-         
+            description: "Star rating 1-5"
+
           - name: date_published
-            description: "Date when the review was published"
+            description: "Date the review was published"
 
           - name: reviewer_name
-            description: "Name of the reviewer"
+            description: "Display name of the reviewer"
 
           - name: company_replied
-            description: "Indicates if the company replied to the review"
+            description: "Whether the merchant replied to the review"
 
           - name: language
-            description: "Language of the review"
+            description: "Detected language ISO 639-1"
 
           - name: ingested_at
-            description: "Timestamp when the review was ingested into the database"
-            tests:
+            description: "Pipeline ingestion timestamp"
+            data_tests:
               - not_null
 
-      - name: reviews_enriched
-        description: "Enriched reviews data with additional transformations"
-
+      # ── Raw reviews — French reference pipeline ────────────────
+      - name: reviews_raw_fr
+        description: "Trustpilot reviews scraped for French top eCommerce brands (BuiltWith)"
         columns:
           - name: review_id
-            description: "Unique identifier for each review"
-            tests:
+            description: "Unique Trustpilot review ID"
+            data_tests:
+              - not_null
+              - unique:
+                  severity: error
+
+          - name: domain
+            description: "Company domain name — FK to leads_builtwith_fr"
+            data_tests:
+              - not_null
+
+          - name: trustpilot_slug
+            description: "Real Trustpilot slug (may differ from domain)"
+            data_tests:
+              - not_null
+
+          - name: review_text
+            description: "Body text of the review"
+
+          - name: review_title
+            description: "Title of the review"
+
+          - name: star_rating
+            description: "Star rating 1-5"
+
+          - name: date_published
+            description: "Date the review was published"
+
+          - name: reviewer_name
+            description: "Display name of the reviewer"
+
+          - name: company_replied
+            description: "Whether the merchant replied to the review"
+
+          - name: language
+            description: "Detected language ISO 639-1"
+
+          - name: ingested_at
+            description: "Pipeline ingestion timestamp"
+            data_tests:
+              - not_null
+
+      # ── Enriched reviews — Gorgias leads pipeline ─────────────
+      - name: reviews_enriched
+        description: "AI-enriched reviews for Gorgias leads — output of ai_enrichment.main"
+        columns:
+          - name: review_id
+            description: "Unique review ID — FK to reviews_raw"
+            data_tests:
               - not_null
               - unique
 
           - name: domain
             description: "Company domain name"
+
           - name: sentiment
-            description: "Sentiment analysis result for the review (e.g., positive, negative,
-              neutral)"
+            description: "AI sentiment: positive | neutral | negative"
+            data_tests:
+              - accepted_values:
+                  values: [positive, neutral, negative]
+
           - name: category
-            description: "Categorization of the review based on content (e.g., product quality,
-              customer service)"
+            description: "Review category (customer_support, shipping, etc.)"
+
           - name: pain_point
-            description: "Identified pain point mentioned in the review"
+            description: "Identified pain point — null for positive reviews"
+
           - name: actionable_insight
-            description: "Actionable insight derived from the review"
+            description: "Actionable insight — never null"
+            data_tests:
+              - not_null
+
           - name: model_used
-            description: "AI model used for enrichment"
+            description: "AI model used (gpt-4o-mini or fallback)"
+
           - name: enriched_at
-            description: "Timestamp when the review was enriched"
+            description: "Enrichment timestamp"
+
+      # ── Enriched reviews — French reference pipeline ──────────
+      - name: reviews_enriched_fr
+        description: "AI-enriched reviews for French top eCommerce brands — output of ai_enrichment.main --source fr"
+        columns:
+          - name: review_id
+            description: "Unique review ID — FK to reviews_raw_fr"
+            data_tests:
+              - not_null
+              - unique
+
+          - name: domain
+            description: "Company domain name"
+
+          - name: sentiment
+            description: "AI sentiment: positive | neutral | negative"
+            data_tests:
+              - accepted_values:
+                  values: [positive, neutral, negative]
+
+          - name: category
+            description: "Review category (customer_support, shipping, etc.)"
+
+          - name: pain_point
+            description: "Identified pain point — null for positive reviews"
+
+          - name: actionable_insight
+            description: "Actionable insight — never null"
+            data_tests:
+              - not_null
+
+          - name: model_used
+            description: "AI model used (gpt-4o-mini or fallback)"
+
+          - name: enriched_at
+            description: "Enrichment timestamp"

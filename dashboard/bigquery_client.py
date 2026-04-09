@@ -10,10 +10,6 @@ BQ_DATASET  = "analytics"
 
 @st.cache_resource
 def get_bq_client() -> bigquery.Client:
-    """
-    BQ client using service account from Streamlit secrets.
-    Required on Streamlit Cloud — gcloud ADC is not available there.
-    """
     credentials = service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=["https://www.googleapis.com/auth/cloud-platform"],
@@ -27,11 +23,18 @@ def get_bq_client() -> bigquery.Client:
 
 @st.cache_data(ttl=600)
 def load_domain_insights() -> pd.DataFrame:
-    """Load mart_domain_insights — one row per domain."""
+    """
+    All domains — Gorgias leads + French top brands.
+    Sorted: Gorgias priority leads first, then FR brands by BuiltWith rank.
+    """
     query = f"""
         SELECT *
         FROM `{BQ_PROJECT}.{BQ_DATASET}.mart_domain_insights`
         ORDER BY
+            CASE domain_source
+                WHEN 'target_leads_raw' THEN 0
+                ELSE 1
+            END,
             CASE outreach_signal
                 WHEN 'priority_lead'          THEN 1
                 WHEN 'warm_lead'              THEN 2
@@ -42,29 +45,24 @@ def load_domain_insights() -> pd.DataFrame:
                 WHEN 'low_priority'           THEN 7
                 ELSE 8
             END,
+            builtwith_rank ASC NULLS LAST,
             review_count DESC
     """
     return get_bq_client().query(query, location=BQ_LOCATION).to_dataframe()
 
 
 @st.cache_data(ttl=600)
-def load_category_agg() -> pd.DataFrame:
-    """Load int_category_agg — review counts by domain and category."""
-    query = f"""
-        SELECT *
-        FROM `{BQ_PROJECT}.{BQ_DATASET}.int_category_agg`
-        ORDER BY domain, review_count DESC
+def load_reviews_for_domain(domain: str, domain_source: str = "target_leads_raw") -> pd.DataFrame:
     """
-    return get_bq_client().query(query, location=BQ_LOCATION).to_dataframe()
-
-
-@st.cache_data(ttl=600)
-def load_reviews_for_domain(domain: str) -> pd.DataFrame:
-    """Load individual reviews for a domain — negatives first."""
+    All reviews for a domain filtered by source — negatives first.
+    domain_source prevents mixing Gorgias and FR reviews when
+    the same domain appears in both pipelines.
+    """
     query = f"""
         SELECT *
         FROM `{BQ_PROJECT}.{BQ_DATASET}.mart_reviews_detail`
-        WHERE domain = '{domain}'
+        WHERE domain        = '{domain}'
+          AND domain_source = '{domain_source}'
         ORDER BY
             CASE sentiment
                 WHEN 'negative' THEN 1
@@ -72,5 +70,16 @@ def load_reviews_for_domain(domain: str) -> pd.DataFrame:
                 ELSE 3
             END,
             star_rating ASC
+    """
+    return get_bq_client().query(query, location=BQ_LOCATION).to_dataframe()
+
+
+@st.cache_data(ttl=600)
+def load_category_agg() -> pd.DataFrame:
+    """Category breakdown — all domains, all sources."""
+    query = f"""
+        SELECT *
+        FROM `{BQ_PROJECT}.{BQ_DATASET}.int_category_agg`
+        ORDER BY domain, review_count DESC
     """
     return get_bq_client().query(query, location=BQ_LOCATION).to_dataframe()

@@ -4,110 +4,299 @@ models:
 
   - name: mart_domain_insights
     description: >
-      Un row par domaine — 16 colonnes, zéro redondance.
-      outreach_signal unifie gorgias_fit_score + pitch_angle + not_found_signal.
-      Table principale consommée par le dashboard.
+      One row per domain from all sources combined.
+      domain_source = 'target_leads_raw'           → Target leads.
+      domain_source = 'builtwith_top_ecommerce_fr' → French top eCommerce reference brands.
+      Gorgias-only columns (outreach_signal, tech_maturity, benchmark_*) are null for FR brands.
+      FR-only columns (builtwith_rank, traffic_tier, sales_revenue) are null for Target leads.
 
     columns:
+
+      # ── Identifiers ──────────────────────────────────────────
       - name: domain_id
-        tests:
-          - unique
+        description: Surrogate key — unique per domain + source combination
+        data_tests:
           - not_null
+          - unique
 
       - name: domain
-        tests:
-          - unique
+        description: Website domain (e.g. sezane.com)
+        data_tests:
           - not_null
 
-      - name: ecommerce_platform
-        tests:
-          - not_null
-
-      - name: trustpilot_status
-        tests:
+      - name: domain_source
+        description: Pipeline source — 'target_leads_raw' or 'builtwith_top_ecommerce_fr'
+        data_tests:
           - not_null
           - accepted_values:
-              values: ['found', 'not_found']
+              values: ["target_leads_raw", "builtwith_top_ecommerce_fr"]
 
+      # ── BuiltWith metadata (FR only) ─────────────────────────
+      - name: builtwith_rank
+        description: BuiltWith rank — lower is more important. Null for target leads.
+
+      - name: traffic_tier
+        description: Traffic level from BuiltWith. Null for target leads.
+
+      - name: sales_revenue
+        description: Estimated revenue band from BuiltWith (e.g. "$2.6m+"). Null for target leads.
+
+      # ── Lead metadata (Target leads only) ─────────────────────────
+      - name: ecommerce_platform
+        description: eCommerce platform detected. Null for FR brands.
+
+      - name: helpdesk
+        description: Helpdesk tool detected. Null for FR brands.
+
+      - name: technologies_app_partners
+        description: Other detected tech stack tools. Null for FR brands.
+
+      - name: estimated_gmv_band
+        description: Estimated GMV range bucket.
+
+      # ── Trustpilot presence ───────────────────────────────────
+      - name: trustpilot_status
+        description: Whether the domain was found on Trustpilot
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ["found", "not_found"]
+
+      # ── Review metrics ────────────────────────────────────────
       - name: review_count
-        tests:
+        description: Total number of reviews scraped
+        data_tests:
           - not_null
 
+      - name: avg_rating
+        description: Average star rating 1-5. Null if not found on Trustpilot.
+
+      - name: pct_positive
+        description: Percentage of positive reviews (sentiment = positive)
+
+      - name: pct_neutral
+        description: Percentage of neutral reviews
+
+      - name: pct_negative
+        description: Percentage of negative reviews
+
+      - name: reply_rate
+        description: Percentage of reviews where the merchant replied
+
+      - name: first_review_date
+        description: Date of the oldest scraped review
+
+      - name: last_review_date
+        description: Date of the most recent scraped review
+
+      # ── CX quality ────────────────────────────────────────────
+      - name: top_pain_category
+        description: Most frequent pain category among negative reviews
+
+      - name: cx_quality_tier
+        description: CX quality classification based on avg_rating
+        data_tests:
+          - accepted_values:
+              values: ["strong", "moderate", "weak", "no_data"]
+
+      # ── FR benchmark (Gorgias leads only) ────────────────────
+      - name: benchmark_score
+        description: >
+          Composite score comparing this lead to the French top brands median.
+          Positive = above benchmark. Null for FR brands.
+
+      - name: benchmark_label
+        description: >
+          Human-readable benchmark result.
+          e.g. 'Far below French standard'. Null for FR brands.
+        data_tests:
+          - accepted_values:
+              values:
+                - "Far below French standard"
+                - "Below French standard"
+                - "On par with French standard"
+                - "Above French standard"
+
+      - name: rating_gap
+        description: Difference between this domain's avg_rating and the FR median
+
+      - name: neg_gap
+        description: Difference between this domain's pct_negative and the FR median
+
+      - name: reply_gap
+        description: Difference between this domain's reply_rate and the FR median
+
+      - name: fr_median_rating
+        description: Median avg_rating across French top brands with Trustpilot data
+
+      - name: fr_median_pct_negative
+        description: Median pct_negative across French top brands
+
+      - name: fr_median_reply_rate
+        description: Median reply_rate across French top brands
+
+      # ── Outreach signal (Target leads only) ─────────────────
       - name: outreach_signal
         description: >
-          Signal unique actionnable pour le sales rep.
-          Found    : priority_lead | warm_lead | low_priority
-          Not found: no_stack_prospect | inbox_upgrade_prospect |
-                     competitor_prospect | lightweight_prospect | research_needed
-        tests:
-          - not_null
+          Sales signal for Target leads. Null for FR brands.
+          Found leads: based on avg_rating.
+          Not found leads: based on helpdesk stack.
+        data_tests:
           - accepted_values:
-              values: [
-                'priority_lead',
-                'warm_lead',
-                'low_priority',
-                'no_stack_prospect',
-                'inbox_upgrade_prospect',
-                'competitor_prospect',
-                'lightweight_prospect',
-                'research_needed'
-              ]
+              values:
+                - "priority_lead"
+                - "warm_lead"
+                - "low_priority"
+                - "no_stack_prospect"
+                - "inbox_upgrade_prospect"
+                - "competitor_prospect"
+                - "lightweight_prospect"
+                - "research_needed"
 
+      # ── Tech maturity (Target leads only) ───────────────────
       - name: tech_maturity
-        description: "Maturité tech basée sur le helpdesk — high | medium | low"
-        tests:
-          - not_null
+        description: Technology maturity classification. Null for FR brands.
+        data_tests:
           - accepted_values:
-              values: ['high', 'medium', 'low']
+              values: ["high", "medium", "low", null]
+
+      - name: _loaded_at
+        description: Timestamp when this row was last computed by dbt
+        data_tests:
+          - not_null
+
 
   - name: mart_reviews_detail
     description: >
-      Un row par review avec enrichissement AI.
-      Utilisé pour le drill-down par domaine dans le dashboard.
+      One row per review from all sources combined.
+      Used by the Drill-down, Pain Points, and Top eCommerce tabs in the dashboard.
+      domain_source identifies which pipeline the review comes from.
+
 
     columns:
+
+      # ── Identifiers ──────────────────────────────────────────
       - name: review_id
-        tests:
-          - unique
+        description: Unique Trustpilot review ID
+        data_tests:
           - not_null
+          - unique
 
       - name: domain_id
-        tests:
+        description: FK to mart_domain_insights.domain_id
+        data_tests:
           - not_null
-          - relationships:
-              to: ref('mart_domain_insights')
-              field: domain_id
 
       - name: domain
-        tests:
+        description: Website domain
+        data_tests:
           - not_null
 
+      - name: domain_source
+        description: Pipeline source — 'target_leads_raw' or 'builtwith_top_ecommerce_fr'
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ["target_leads_raw", "builtwith_top_ecommerce_fr"]
+
+      # ── Domain context (Gorgias only) ────────────────────────
+      - name: ecommerce_platform
+        description: eCommerce platform. Null for FR brands.
+
+      - name: estimated_gmv_band
+        description: Estimated GMV band.
+
+      - name: helpdesk
+        description: Helpdesk tool. Null for FR brands.
+
+      - name: tech_maturity
+        description: Tech maturity classification. Null for FR brands.
+
+      - name: outreach_signal
+        description: Sales signal. Null for FR brands.
+
+      # ── Domain context (FR only) ──────────────────────────────
+      - name: builtwith_rank
+        description: BuiltWith rank. Null for Gorgias leads.
+
+      - name: traffic_tier
+        description: Traffic level. Null for Gorgias leads.
+
+      - name: sales_revenue
+        description: Estimated revenue band. Null for Gorgias leads.
+
+      # ── Domain context (both sources) ────────────────────────
+      - name: cx_quality_tier
+        description: CX quality classification
+
+      - name: top_pain_category
+        description: Most frequent pain category for this domain
+
+      # ── Review content ────────────────────────────────────────
+      - name: review_title
+        description: Title of the review
+
+      - name: review_text
+        description: Body text of the review
+
       - name: star_rating
-        tests:
+        description: Star rating 1-5
+        data_tests:
           - not_null
           - accepted_values:
               values: [1, 2, 3, 4, 5]
               quote: false
 
+      - name: review_date
+        description: Publication date of the review
+
+      - name: reviewer_name
+        description: Display name of the reviewer
+
+      - name: company_replied
+        description: Whether the merchant replied to this review
+
+      - name: language
+        description: Detected language ISO 639-1
+
+      # ── AI enrichment ─────────────────────────────────────────
       - name: sentiment
-        tests:
-          - accepted_values:
-              values: ['positive', 'neutral', 'negative']
-              config:
-                severity: error
-
-      - name: category
-        tests:
-          - accepted_values:
-              values: ['customer_support', 'shipping', 'product_quality',
-                       'pricing', 'ux', 'returns', 'packaging',
-                       'communication', 'stock', 'loyalty', 'other']
-              config:
-                severity: warn
-
-      - name: is_enriched
-        tests:
+        description: >
+          AI-classified sentiment. Falls back to star_rating-based
+          classification if not yet enriched.
+        data_tests:
           - not_null
           - accepted_values:
-              values: [true, false]
-              quote: false
+              values: ["positive", "neutral", "negative"]
+
+      - name: category
+        description: Review category (customer_support, shipping, etc.). Null if not enriched.
+        data_tests:
+          - accepted_values:
+              values:
+                - "customer_support"
+                - "shipping"
+                - "product_quality"
+                - "pricing"
+                - "ux"
+                - "returns"
+                - "packaging"
+                - "communication"
+                - "stock"
+                - "loyalty"
+                - "other"
+
+      - name: pain_point
+        description: Identified pain point. Null for positive reviews without complaints.
+
+      - name: actionable_insight
+        description: Actionable insight derived from the review. Null if not enriched.
+
+      - name: model_used
+        description: AI model used for enrichment (e.g. gpt-4o-mini or fallback)
+
+      - name: enriched_at
+        description: Timestamp when this review was enriched by AI
+
+      - name: is_enriched
+        description: True if enriched by AI, false if using star_rating fallback

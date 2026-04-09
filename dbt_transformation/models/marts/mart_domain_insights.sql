@@ -1,30 +1,64 @@
-with leads as (
-    select * from {{ ref('stg_leads') }}
+with domains as (
+    select * from {{ ref('stg_domains') }}
 ),
 
 reviews_agg as (
     select * from {{ ref('int_reviews_agg') }}
+),
+
+benchmark as (
+    select * from {{ ref('int_benchmark_scores') }}
+),
+
+top_pain as (
+
+    select
+        domain_id,
+        domain,
+        category as top_pain_category
+    from (
+        select
+            domain_id,
+            domain,
+            category,
+            row_number() over (
+                partition by domain_id
+                order by count(*) desc
+            ) as rn
+        from {{ ref('stg_reviews_enriched') }}
+        where sentiment_final = 'negative'
+          and category        is not null
+        group by domain_id, domain, category
+    )
+    where rn = 1
+
 )
 
 select
-    -- ── Identifiants ─────────────────────────────────────────
-    l.domain_id,
-    l.domain,
+    -- ── Identifiers ───────────────────────────────────────────
+    d.domain_id,
+    d.domain,
+    d.source                                                as domain_source,
 
-    -- ── Stack tech ────────────────────────────────────────────
-    l.ecommerce_platform,
-    l.helpdesk,
-    l.technologies_app_partners,
-    l.estimated_gmv_band,
+    -- ── BuiltWith metadata ───────
+    d.rank                                                  as builtwith_rank,
+    d.traffic_tier,
+    d.sales_revenue,
 
-    -- ── Présence Trustpilot ───────────────────────────────────
+    -- ── Lead metadata (targeted domains) ────────────
+    d.ecommerce_platform,
+    d.helpdesk,
+    d.technologies_app_partners,
+    d.estimated_gmv_band,
+
+    -- ── Trustpilot presence ───────────────────────────────────
     case
-        when r.domain is not null then 'found'
-        else                           'not_found'
-    end as trustpilot_status,
+        when r.domain_id is not null then 'found'
+        else                              'not_found'
+    end                                                     as trustpilot_status,
 
-    -- ── Métriques reviews (null si not_found) ─────────────────
-    coalesce(r.review_count, 0)                     as review_count,
+    -- ── Review metrics (both sources) ─────────────────────────
+    coalesce(r.review_count, 0)                             as review_count,
     r.avg_rating,
     r.pct_positive,
     r.pct_neutral,
@@ -33,52 +67,61 @@ select
     r.first_review_date,
     r.last_review_date,
 
+    -- ── Top pain category (both sources) ─────────────────────
+    p.top_pain_category,
+
+    -- ── CX quality tier (both sources) ───────────────────────
     case
-        -- Domaines FOUND : priorité basée sur avg_rating
-        when r.domain is not null and r.avg_rating < 3.0
-            then 'priority_lead'
+        when r.avg_rating >= 4.0      then 'strong'
+        when r.avg_rating >= 3.0      then 'moderate'
+        when r.avg_rating is not null then 'weak'
+        else                               'no_data'
+    end                                                     as cx_quality_tier,
 
-        when r.domain is not null and r.avg_rating between 3.0 and 3.9
-            then 'warm_lead'
+    -- ── FR benchmark scores (Target leads only) ─
+    b.benchmark_score,
+    b.benchmark_label,
+    b.rating_gap,
+    b.neg_gap,
+    b.reply_gap,
+    b.fr_median_rating,
+    b.fr_median_pct_negative,
+    b.fr_median_reply_rate,
 
-        when r.domain is not null and r.avg_rating >= 4.0
-            then 'low_priority'
-
-        -- Domaines NOT FOUND : opportunité basée sur helpdesk
-        when r.domain is null and l.helpdesk is null
-            then 'no_stack_prospect'
-
-        when r.domain is null
-         and lower(l.helpdesk) like '%shopify inbox%'
-            then 'inbox_upgrade_prospect'
-
-        when r.domain is null
-         and (lower(l.helpdesk) like '%zendesk%'
-           or lower(l.helpdesk) like '%intercom%'
-           or lower(l.helpdesk) like '%help_scout%')
-            then 'competitor_prospect'
-
-        when r.domain is null
-         and (lower(l.helpdesk) like '%tidio%'
-           or lower(l.helpdesk) like '%chatra%'
-           or lower(l.helpdesk) like '%olark%'
-           or lower(l.helpdesk) in ('helpcenter', 'helpdesk'))
-            then 'lightweight_prospect'
-
+    -- ── Outreach signal (targetted leads only) ─────
+    case
+        when d.source != 'target_leads_raw'                   then null
+        when r.domain_id is not null and r.avg_rating < 3.0   then 'priority_lead'
+        when r.domain_id is not null and r.avg_rating < 4.0   then 'warm_lead'
+        when r.domain_id is not null                          then 'low_priority'
+        when r.domain_id is null and d.helpdesk is null       then 'no_stack_prospect'
+        when r.domain_id is null
+         and lower(d.helpdesk) like '%shopify inbox%'         then 'inbox_upgrade_prospect'
+        when r.domain_id is null
+         and (lower(d.helpdesk) like '%zendesk%'
+           or lower(d.helpdesk) like '%intercom%'
+           or lower(d.helpdesk) like '%help_scout%')          then 'competitor_prospect'
+        when r.domain_id is null
+         and (lower(d.helpdesk) like '%tidio%'
+           or lower(d.helpdesk) like '%chatra%'
+           or lower(d.helpdesk) like '%olark%'
+           or lower(d.helpdesk) in ('helpcenter','helpdesk')) then 'lightweight_prospect'
         else 'research_needed'
-    end as outreach_signal,
+    end                                                     as outreach_signal,
 
+    -- ── Tech maturity (Target leads only) ───────
     case
-        when lower(l.helpdesk) like '%zendesk%'
-          or lower(l.helpdesk) like '%intercom%'
-          or lower(l.helpdesk) like '%help_scout%'
-            then 'high'
+        when d.source != 'target_leads_raw'               then null
+        when lower(d.helpdesk) like '%zendesk%'
+          or lower(d.helpdesk) like '%intercom%'
+          or lower(d.helpdesk) like '%help_scout%'         then 'high'
+        when d.helpdesk is not null                        then 'medium'
+        else                                                    'low'
+    end                                                     as tech_maturity,
 
-        when l.helpdesk is not null
-            then 'medium'
+    current_timestamp()                                     as _loaded_at
 
-        else 'low'
-    end as tech_maturity
-
-from leads l
-left join reviews_agg r on l.domain = r.domain
+from domains d
+left join reviews_agg r  on d.domain_id = r.domain_id
+left join benchmark   b  on d.domain_id = b.domain_id
+left join top_pain    p  on d.domain_id = p.domain_id

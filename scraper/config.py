@@ -1,41 +1,40 @@
-import os
 from pathlib import Path
 from dotenv import load_dotenv
+import os
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 
 def _require(key: str) -> str:
-    value = os.getenv(key)
-    if not value:
-        raise EnvironmentError(
-            f"Variable manquante dans .env : '{key}'\n"
-            f"→ Copier .env.example en .env et remplir la valeur."
-        )
-    return value
+    val = os.getenv(key)
+    if not val:
+        raise RuntimeError(f"Variable manquante dans .env : {key}")
+    return val
 
 
-# ── BigQuery (depuis .env) ────────────────────────────────────
-BQ_PROJECT = _require("BQ_PROJECT")
+BQ_PROJECT  = _require("BQ_PROJECT")
+BQ_LOCATION = "EU"
 
-# ── BigQuery (statique) ───────────────────────────────────────
+# ── Source 1 : target leads (original) ──────────────────────
 LEADS_DATASET   = "leads"
-LEADS_TABLE     = "leads_raw"
-REVIEWS_DATASET = "reviews"
-REVIEWS_TABLE   = "reviews_raw"
-BQ_LOCATION     = "EU"
-BQ_BATCH_SIZE   = 500
+LEADS_TABLE     = "leads_table"
+
+# ── Source 2 : BuiltWith French eCommerce leads ───────────────
+FR_LEADS_DATASET = "analytics"
+FR_LEADS_TABLE   = "leads_builtwith_fr"   # dbt staging model output
+
+# ── Reviews output tables ─────────────────────────────────────
+REVIEWS_DATASET     = "reviews"
+REVIEWS_TABLE       = "reviews_raw"        # original pipeline
+REVIEWS_TABLE_FR    = "reviews_raw_fr"     # new French reference data pipeline
 
 # ── Scraping ──────────────────────────────────────────────────
-# SMB (<$3M GMV) : 10 pages max → 200 reviews — signal suffisant
-# Full scrape (--full) : 50 pages → 1000 reviews — pour les gros comptes
 MAX_PAGES_PER_DOMAIN      = 10
 MAX_PAGES_PER_DOMAIN_FULL = 50
+DELAY_BETWEEN_PAGES       = (1.5, 3.0)
+DELAY_BETWEEN_DOMAINS     = (3.0, 6.0)
+BQ_BATCH_SIZE             = 500
 
-DELAY_BETWEEN_PAGES   = (1.5, 3.0)
-DELAY_BETWEEN_DOMAINS = (3.0, 6.0)
-
-# ── User-Agents ───────────────────────────────────────────────
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",

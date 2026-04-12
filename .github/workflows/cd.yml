@@ -1,71 +1,37 @@
-name: CD — Deploy dbt to Production
+name: CD
 
 on:
   push:
     branches: [main]
     paths:
-      # Only redeploy when dbt models or Python pipeline code changes
       - "dbt_transformation/**"
       - "scraper/**"
       - "ai_enrichment/**"
       - "builtwith_domain_collector/**"
 
-env:
-  PYTHON_VERSION: "3.12"
-
 jobs:
-
-  # ── Job 1: dbt production build ───────────────────────────
-  dbt_production:
-    name: dbt Production Build
+  dbt_build:
+    name: dbt production build
     runs-on: ubuntu-latest
     environment: prod
 
-    env:
-      GOOGLE_CREDENTIALS: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
           cache: pip
 
-      - name: Install dbt
-        run: pip install dbt-bigquery==1.11.1
+      - name: Install
+        run: pip install "dbt-bigquery==1.8.2" "protobuf>=3.20.0,<5.0.0"
 
       - name: Write GCP credentials
         run: |
           echo '${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}' > /tmp/gcp_credentials.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp_credentials.json" >> $GITHUB_ENV
+          echo "DBT_PROFILES_DIR=$GITHUB_WORKSPACE/dbt_transformation" >> $GITHUB_ENV
 
-      - name: dbt deps
+      - name: dbt build
         working-directory: dbt_transformation
-        run: dbt deps
-
-      - name: dbt build (run + test)
-        working-directory: dbt_transformation
-        run: |
-          dbt build \
-            --no-partial-parse \
-            --fail-fast
-        # dbt build = dbt run + dbt test
-        # --fail-fast stops immediately on first test failure
-
-      - name: dbt generate docs
-        working-directory: dbt_transformation
-        run: dbt docs generate 
-        continue-on-error: true
-
-      - name: Upload dbt docs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dbt-docs
-          path: dbt_transformation/target/
-          retention-days: 7
-        continue-on-error: true
-
-  
+        run: dbt build --no-partial-parse --fail-fast

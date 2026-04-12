@@ -42,7 +42,7 @@ def main() -> None:
     log.info("║  AI Enrichment Pipeline                          ║")
     log.info("╠══════════════════════════════════════════════════╣")
     log.info(f"║  Source : {label:<41}║")
-    log.info(f"║  Model  : gpt-4o-mini                            ║")
+    log.info("║  Model  : gpt-4o-mini                            ║")
     log.info(f"║  Limit  : {str(args.limit or 'none'):<41}║")
     log.info("╚══════════════════════════════════════════════════╝")
 

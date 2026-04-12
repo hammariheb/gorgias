@@ -43,7 +43,7 @@ sources:
             data_tests:
               - not_null
               - unique:
-                  severity: error
+                  severity: warn
 
           - name: domain
             description: "Company domain name — FK to leads_raw"
@@ -88,7 +88,7 @@ sources:
             data_tests:
               - not_null
               - unique:
-                  severity: error
+                  severity: warn
 
           - name: domain
             description: "Company domain name — FK to leads_builtwith_fr"

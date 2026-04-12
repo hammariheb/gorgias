@@ -44,8 +44,7 @@ cleaned as (
             'rank',
             'tech_spend',
           'social_followers'
-       ]) }}                               as domain_id,
-
+       ]) }}                               as domain_id, 
         rank,
         lower(trim(domain))                 as domain,
         sales_revenue,

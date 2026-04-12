@@ -7,7 +7,6 @@ on:
       - "dbt_transformation/**"
       - "scraper/**"
       - "ai_enrichment/**"
-      - "builtwith_domain_collector/**"
 
 jobs:
   dbt_build:
@@ -24,7 +23,8 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install "dbt-bigquery==1.11.1" "protobuf>=3.20.0,<5.0.0"
+        run: |
+          pip install "dbt-bigquery==1.9.0" "protobuf>=3.20.0,<5.0.0"
 
       - name: Write GCP credentials
         run: |

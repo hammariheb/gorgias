@@ -132,7 +132,7 @@ def main() -> None:
 
     # ── 5. Summary ────────────────────────────────────────────
     target = "reviews_raw_fr" if args.source == "fr" else "reviews_raw"
-    log.info(f"\n[4/4] Done!")
+    log.info("\n[4/4] Done!")
     log.info(f"  Mode           : {mode}")
     log.info(f"  Target table   : reviews.{target}")
     log.info(f"  New reviews    : {total_reviews:,}")
@@ -142,7 +142,7 @@ def main() -> None:
     if failed_domains:
         log.warning(f"  Failed: {failed_domains[:10]}")
 
-    log.info(f"\n  Top domains by new reviews:")
+    log.info("\n  Top domains by new reviews:")
     for domain, count in sorted(stats.items(), key=lambda x: -x[1])[:10]:
         bar = "█" * min(count // 2, 30)
         log.info(f"    {domain:<45} +{count:>3}  {bar}")

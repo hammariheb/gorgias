@@ -14,7 +14,6 @@ __pycache__/
 # dbt
 dbt_transformation/logs/
 dbt_transformation/.user.yml
-dbt_transformation/profiles.yml
 
 # BigQuery service account keys
 *.json

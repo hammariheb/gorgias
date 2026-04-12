@@ -19,7 +19,7 @@ jobs:
 
       - name: Install
         run: |
-          pip install ruff "dbt-bigquery==1.8.2" "protobuf>=3.20.0,<5.0.0"
+          pip install "dbt-bigquery==1.9.0" "protobuf>=3.20.0,<5.0.0"
 
       - name: Lint
         run: ruff check scraper/ ai_enrichment/
@@ -29,6 +29,11 @@ jobs:
           echo '${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}' > /tmp/gcp_credentials.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp_credentials.json" >> $GITHUB_ENV
           echo "DBT_PROFILES_DIR=$GITHUB_WORKSPACE/dbt_transformation" >> $GITHUB_ENV
+          echo "BQ_PROJECT=${{ secrets.BQ_PROJECT }}" >> $GITHUB_ENV
+
+      - name: dbt deps
+        working-directory: dbt_transformation
+        run: dbt deps
 
       - name: dbt compile
         working-directory: dbt_transformation

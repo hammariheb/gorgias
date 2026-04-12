@@ -1,12 +1,21 @@
 dbt_transformation:
-  target: prod
-  outputs:
-    prod:
-      type: bigquery
-      method: service-account
-      project: "{{ env_var('BQ_PROJECT') }}"
-      dataset: analytics_prod
-      location: EU
-      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
-      threads: 4
-      timeout_seconds: 300
+    target: prod
+    outputs:
+        dev:
+            type: bigquery
+            method: service-account
+            project: "{{ env_var('BQ_PROJECT') }}"
+            dataset: analytics
+            location: EU
+            keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+            threads: 8
+            timeout_seconds: 300
+        prod:
+            type: bigquery
+            method: service-account
+            project: "{{ env_var('BQ_PROJECT') }}"
+            dataset: analytics_prod
+            location: EU
+            keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+            threads: 8
+            timeout_seconds: 300

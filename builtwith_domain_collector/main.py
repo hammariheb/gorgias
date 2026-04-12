@@ -1,12 +1,13 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 import httpx
+import pandas as pd
 
+from .config import MAX_PAGES, OUTPUT_CSV, OUTPUT_SEED_CSV, SEED_COLUMNS
 from .scraper import scrape_builtwith_france
-from .exporter import save_csv, save_seed_csv
-from .config import OUTPUT_CSV, OUTPUT_SEED_CSV, MAX_PAGES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,42 +21,36 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _save(records: list[dict], path: str, encoding: str = "utf-8") -> pd.DataFrame:
+    df = pd.DataFrame(records)
+    for col in SEED_COLUMNS:
+        if col not in df.columns:
+            df[col] = None
+    df = (
+        df[SEED_COLUMNS]
+        .sort_values("rank", na_position="last")
+        .drop_duplicates(subset="domain")
+        .reset_index(drop=True)
+    )
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False, encoding=encoding)
+    log.info(f"  Saved {len(df)} domains → {path}")
+    return df
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Scrape French Top eCommerce domains from BuiltWith"
-    )
-    parser.add_argument(
-        "--pages",
-        type=int,
-        default=MAX_PAGES,
-        help=f"Number of pages to scrape (default: {MAX_PAGES}, ~50 domains/page)",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=OUTPUT_CSV,
-        help=f"Output CSV path (default: {OUTPUT_CSV})",
-    )
-    parser.add_argument(
-        "--seed",
-        type=str,
-        default=OUTPUT_SEED_CSV,
-        help=f"dbt seed CSV path (default: {OUTPUT_SEED_CSV})",
-    )
-    parser.add_argument(
-        "--no-seed",
-        action="store_true",
-        help="Skip saving the dbt seed CSV",
-    )
+    parser = argparse.ArgumentParser(description="Scrape French top eCommerce domains from BuiltWith")
+    parser.add_argument("--pages",   type=int, default=MAX_PAGES,       help="Pages to scrape")
+    parser.add_argument("--output",  type=str, default=OUTPUT_CSV,      help="Output CSV path")
+    parser.add_argument("--seed",    type=str, default=OUTPUT_SEED_CSV, help="dbt seed CSV path")
+    parser.add_argument("--no-seed", action="store_true",               help="Skip dbt seed CSV")
     args = parser.parse_args()
 
     log.info("╔══════════════════════════════════════════╗")
     log.info("║  BuiltWith Collector — French eCommerce  ║")
     log.info("╚══════════════════════════════════════════╝")
-    log.info(f"  Source : builtwith.com/top-sites/France/eCommerce")
-    log.info(f"  Pages  : up to {args.pages}")
+    log.info(f"  Pages : up to {args.pages}")
 
-    # ── Scrape ────────────────────────────────────────────────
     with httpx.Client(
         timeout=httpx.Timeout(20.0),
         follow_redirects=True,
@@ -64,33 +59,21 @@ def main() -> None:
         records = scrape_builtwith_france(client, max_pages=args.pages)
 
     if not records:
-        log.error("No domains scraped. Check your network connection or try again.")
+        log.error("No domains scraped.")
         sys.exit(1)
 
-    # ── Save CSV ──────────────────────────────────────────────
-    df = save_csv(records, args.output)
+    df = _save(records, args.output, encoding="utf-8-sig")
 
-    # ── Save dbt seed ─────────────────────────────────────────
     if not args.no_seed:
-        save_seed_csv(records, args.seed)
+        _save(records, args.seed)
 
-    # ── Summary ───────────────────────────────────────────────
-    log.info("\n" + "=" * 50)
-    log.info("✅ Done!")
-    log.info(f"   Domains scraped : {len(df)}")
-    log.info(f"   Output CSV      : {args.output}")
+    log.info(f"\n  Done — {len(df)} domains scraped")
+    log.info(f"  CSV  : {args.output}")
     if not args.no_seed:
-        log.info(f"   dbt seed        : {args.seed}")
-    log.info("\nTop 10 domains by rank:")
+        log.info(f"  Seed : {args.seed}")
+    log.info("\n  Top 10:")
     for _, row in df.head(10).iterrows():
-        log.info(
-            f"   #{row['rank']:>3}  {row['domain']:<35}"
-            f"  revenue={row['sales_revenue'] or '—':>8}"
-            f"  traffic={row['traffic_tier'] or '—'}"
-        )
-    log.info("\nNext steps:")
-    log.info("  1. Run dbt seed : cd dbt_transformation && dbt seed")
-    log.info("  2. Run dbt build: dbt build --no-partial-parse")
+        log.info(f"    #{row['rank']:>3}  {row['domain']:<35}  {row['traffic_tier'] or '—'}")
 
 
 if __name__ == "__main__":

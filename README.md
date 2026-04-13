@@ -16,6 +16,16 @@ BuiltWith (French top eCommerce) ──┐
 Target leads (target accounts) ───┘
 ```
 
+
+## 🚀 Live Dashboard
+
+
+## [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://merchantradar.streamlit.app)
+
+### 👉 **[merchantradar.streamlit.app](https://merchantradar.streamlit.app)**
+
+
+
 ## Architecture
 
 ```
@@ -28,14 +38,6 @@ merchant_radar/
 ├── airflow/                      # Weekly orchestration DAG
 └── .github/workflows/            # CI (lint + dbt compile) and CD (dbt build)
 ```
-
-## 🚀 Live Dashboard
-
-
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://merchantradar.streamlit.app)
-
-👉 **[merchantradar.streamlit.app](https://merchantradar.streamlit.app)**
-
 
 
 ## Quickstart — local run

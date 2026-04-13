@@ -2,6 +2,8 @@
 
 End-to-end analytics pipeline that identifies eCommerce merchants who are struggling with customer experience — and surfaces them as Target leads.
 
+![Alt Full Pipeline](assets/Full_pipeline.png)
+
 ## What it does
 
 MerchantRadar scrapes Trustpilot reviews for two domain lists, enriches them with AI-generated sentiment and pain-point analysis, transforms everything with dbt, and serves the results through a Streamlit dashboard.

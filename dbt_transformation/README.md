@@ -78,7 +78,7 @@ dbt_transformation:
     prod:
       type: bigquery
       method: service-account
-      project: "{{ env_var('BQ_PROJECT', 'xxxxxxxxxx') }}"
+      project: ""{{ env_var('BQ_PROJECT') }}"
       dataset: analytics_prod
       location: EU
       keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"

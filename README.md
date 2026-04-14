@@ -106,7 +106,7 @@ Both require GitHub secrets: `GCP_SERVICE_ACCOUNT_JSON`, `BQ_PROJECT`.
 
 | Source | Table | Description |
 |---|---|---|
-| Target leads | `leads.leads_table` | Target accounts — Target prospecting list |
+| Target leads | `leads.leads_raw` | Target accounts — Target prospecting list |
 | BuiltWith FR | `analytics.leads_builtwith_fr` | French top eCommerce brands (dbt seed) |
 | Trustpilot | `reviews.reviews_raw` | Scraped reviews for Target leads |
 | Trustpilot FR | `reviews.reviews_raw_fr` | Scraped reviews for FR brands |
